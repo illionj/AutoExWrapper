@@ -1,267 +1,57 @@
-# function binding 
+# AutoExWrapper
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A simple function binding demo that achieves the following basic features:
+## 1. 介绍
+我的第一份工作是在wosa/xfs规范下做金融设备中间件开发,后来在国产化替代的信创浪潮下从win平台迁移到linux平台.
 
-0. Header Only
-   
-1. No need for repetitive checks of return values to confirm the correct execution of functions.
+这个金融设备中间件开发,抛开框架系统设计等比较有意思部分,80%的工作都集中在封装不同商家设备的sdk.
 
-2. All introduced libraries or functions have a unified exception handling approach.
+大致流程为wosa/xfs定义一组spi,上层负责与应用调用交互,中间层负责内部数据流转,最底层来调用厂家设备完成功能.
 
-3. For some libraries, negative numbers indicate errors, while for others, positive numbers indicate errors. Different meanings of return values between different libraries can be handled correctly.
+底层封装不复杂,但是架不住厂家众多,有时甲方会指定厂家,有时采购会选择便宜厂家,或者原厂家停止生产等等情况.
 
-4. Exception levels can be controlled to manage the exception throwing and handling process of the bound functions.
+厂家能提供的sdk也是五花八门,有提供dll,so的,也有给指令集自己挂串口或者usb交互的.至于内部细节就更多了,有些厂家要用win平台消息通知那一套,有些厂家是提供一个可执行文件,用socket等方式和我做交互.
 
-5. Newly bound functions have the same parameters, forms, and usage as the original function. The bound function adds an optional 'exception level' parameter at the end of the parameter list (defaulting to normal throw)."
+面对这茫茫多的api,我厌倦了调用一次写一次if判断一次是否成功,然后输出日志,进入错误处理.
 
+于是我想到了可以用异常的方式来处理,可是异常需要对函数包装,本身就被api数量困扰,为每个api做一个包装层反而增加工作量.
 
+那能不能让这个包装工作简化一些?所以我采用模板来完成这个自动化包装工作.
+这里只是一个简化版,我抽出了核心骨架来表达想法,省略了特殊情况处理和入参反射(类似fmt,当然写的没别人好).
 
-#### *Basic Usage*
+这个小玩具算的上一个转折点,从c++03进化到了c++17,认真学习了一堆模板知识和奇技淫巧.
+当时觉得自己模板都能学会,小小的c++容不下我了.又去学习去学csapp,学习计算机架构,学习汇编等等.
+换工作的时候感觉得挂个github装场面,所以它又被急急忙忙的被挂出来.
 
-```cpp
-#include "func_bind_T.hpp"
-#include "add.h"
-
-template <typename T>
-void exceptionDo(T *p, example_error &e)
-{
-    /**
-     * @brief  you can do somethings for member
-     */
-    if (p != nullptr)
-        p->exp_times++;
-
-    /**
-     * @brief  or  example_error
-     */
-    std::cout << "e.what()=" << e.what() << '\n';
-}
-
-/**
- * @brief  If you get bored, use macros.
- */
-#define varName(var) #var
-#define L_BIND2(func2, space, c) lam_bind(func2, space::needThrowException<func_ret_t<decltype(func2)>>, exceptionDo<std::remove_pointer_t<decltype(c)>>, varName(func2), c)
-
-/**
- * @brief  See add.cpp file for details
- *         Set rules for int return values, throw an exception when less than 0
- *         Set rules for double return values, throw an exception when greater than 0
- */
-
-int (*padd)(int, int); // test function pointer
-struct A
-{
-
-    A(int x)
-    {
-        exp_times = x;
-        padd = add;
-
-        add_exp = lam_bind(add, ADD::needThrowException<int>, exceptionDo<A>, varName(add), this);
-        reduce_exp = L_BIND2(reduce, ADD, this);
-        padd_exp = L_BIND2(padd, ADD, this);
-        none_para_exp = L_BIND2(none_para, ADD, this);
-    }
-    function_exp<int(int, int)> add_exp;
-    function_exp<int(int, int)> padd_exp;
-    function_exp<double(double, double)> reduce_exp;
-    function_exp<int()> none_para_exp;
-
-    int exp_times = 0;
-
-    template <typename T>
-    friend void exceptionDo(T *p, example_error &e);
-};
-
-/**
- * @brief  Test whether basic functions are normal
- */
-void test_basic_function(A &a)
-{
-    for (int i = 0; i < 10; i++)
-    {
-        try
-        {
-
-            auto res = a.reduce_exp(i, 5);
-            std::cout << "reduce_exp=" << res << '\n';
-            auto res1 = a.add_exp(i, -5);
-            std::cout << "add_exp=" << res1 << '\n';
-        }
-        catch (const std::exception &e)
-        {
-            std::cout << "exp_times=" << a.exp_times << '\n';
-        }
-        std::cout << "\n";
-    }
-}
-
-/**
- * @brief  Test whether the parameters of exception control are effective
- */
-void test_ExceptionLevel(A &a, ExceptionLevel level)
-{
-    try
-    {
-
-        auto res = a.reduce_exp(90, 5, level);
-        std::cout << "reduce_exp=" << res << '\n';
-        auto res1 = a.add_exp(-90, 5, level);
-        std::cout << "add_exp=" << res1 << '\n';
-        auto res2 = a.padd_exp(-10, 5, level);
-        std::cout << "padd_exp=" << res2 << '\n';
-        auto res3 = a.none_para_exp(level);
-        std::cout << "none_para_exp=" << res3 << '\n';
-        std::cout << "test_ExceptionLevel end normally\n";
-    }
-    catch (const std::exception &e)
-    {
-        std::cout << "exp_times=" << a.exp_times << '\n';
-    }
-}
-
-int main()
-{
-    A a(0);
-
-    std::cout << "\n---------------test_basic_function begin---------------\n";
-    test_basic_function(a);
-    std::cout << "\n---------------ignoreExcep begin---------------\n";
-    test_ExceptionLevel(a, ExceptionLevel::ignoreExcep);
-    std::cout << "\n---------------promptExcep begin---------------\n";
-    test_ExceptionLevel(a, ExceptionLevel::promptExcep);
-    std::cout << "\n---------------silentExcep begin---------------\n";
-    test_ExceptionLevel(a, ExceptionLevel::silentExcep);
-}
-```
-In this basic example:
-
-A set of bound functions should be encapsulated within a class.
-When exceptions occur, a friend template is needed to handle the exception cleanup.
-A specific namespace with a set of functions is required to determine whether exceptions are thrown (with potentially various return value types).
-The new functions are identical to the original functions, with a default parameter controlling exception behavior.
-Of course, this is just a simple demo, demonstrating how to combine original C functions with exceptions in a rudimentary way, without considering factors like overhead.
+现在当然不会更新它了,没有需求也没啥实际价值,半吊子的模板用法更没有什么学习价值,仅仅留作纪念.
 
 
+## 2. 功能
+简单来说就是为任意函数绑定三个组件:
++ 异常检查组件: 判断要不要抛异常
++ 异常善后组件: 出现异常做些什么
++ 反射组件: 展示异常信息需要一些函数信息
 
-#### *Result*
+完成绑定的函数在最后会新增一个默认参数,表示异常等级,有时知道这里报错但不希望它抛出异常,或者不希望它反馈信息,静默处理等.
 
 ```cpp
+auto res = a.reduce_exp(i, 5);
+```
+如果出现异常,e.what()会记录错误信息,例如:
+```cpp
+Exception!!  1.000000=reduce(6,5.000000)
+```
+完整输出是哪个函数报错,造成错误的入参是什么
 
----------------test_basic_function begin---------------
-reduce_exp=-5
-e.what()=Exception!!  -5=add(0,-5)
-exp_times=1
-
-reduce_exp=-4
-e.what()=Exception!!  -4=add(1,-5)
-exp_times=2
-
-reduce_exp=-3
-e.what()=Exception!!  -3=add(2,-5)
-exp_times=3
-
-reduce_exp=-2
-e.what()=Exception!!  -2=add(3,-5)
-exp_times=4
-
-reduce_exp=-1
-e.what()=Exception!!  -1=add(4,-5)
-exp_times=5
-
-reduce_exp=0
-add_exp=0
-
-e.what()=Exception!!  1.000000=reduce(6,5.000000)
-exp_times=6
-
-e.what()=Exception!!  2.000000=reduce(7,5.000000)
-exp_times=7
-
-e.what()=Exception!!  3.000000=reduce(8,5.000000)
-exp_times=8
-
-e.what()=Exception!!  4.000000=reduce(9,5.000000)
-exp_times=9
-
-
----------------ignoreExcep begin---------------
-reduce_exp=85
-add_exp=-85
-padd_exp=-5
-test_ExceptionLevel end normally
-
----------------promptExcep begin---------------
-e.what()=Exception!!  85.000000=reduce(90,5.000000)
-reduce_exp=85
-e.what()=Exception!!  -85=add(-90,5)
-add_exp=-85
-e.what()=Exception!!  -5=padd(-10,5)
-padd_exp=-5
-test_ExceptionLevel end normally
-
----------------silentExcep begin---------------
-exp_times=12---------------test_basic_function begin---------------
-reduce_exp=-5
-e.what()=Exception!!  -5=add(0,-5)
-exp_times=1
-
-reduce_exp=-4
-e.what()=Exception!!  -4=add(1,-5)
-exp_times=2
-
-reduce_exp=-3
-e.what()=Exception!!  -3=add(2,-5)
-exp_times=3
-
-reduce_exp=-2
-e.what()=Exception!!  -2=add(3,-5)
-exp_times=4
-
-reduce_exp=-1
-e.what()=Exception!!  -1=add(4,-5)
-exp_times=5
-
-reduce_exp=0
-add_exp=0
-
-e.what()=Exception!!  1.000000=reduce(6,5.000000)
-exp_times=6
-
-e.what()=Exception!!  2.000000=reduce(7,5.000000)
-exp_times=7
-
-e.what()=Exception!!  3.000000=reduce(8,5.000000)
-exp_times=8
-
-e.what()=Exception!!  4.000000=reduce(9,5.000000)
-exp_times=9
-
-
----------------ignoreExcep begin---------------
-reduce_exp=85
-add_exp=-85
-padd_exp=-5
-none_para_exp=-1
-test_ExceptionLevel end normally
-
----------------promptExcep begin---------------
-e.what()=Exception!!  85.000000=reduce(90,5.000000)
-reduce_exp=85
-e.what()=Exception!!  -85=add(-90,5)
-add_exp=-85
-e.what()=Exception!!  -5=padd(-10,5)
-padd_exp=-5
-e.what()=Exception!!  -1=none_para( )
-none_para_exp=-1
-test_ExceptionLevel end normally
-
----------------silentExcep begin---------------
-exp_times=13
-
+如果启用忽略参数则不会抛出异常
+```cpp
+auto res = a.reduce_exp(i, 5,ExceptionLevel::ignoreExcep);
 ```
 
-If all your original functions have at least one parameter, you may encounter a compilation warning when using this header file (warning: unused function 'printFolder' [-unused-function]). This is done for better demonstration purposes as I used fold expressions to print all input parameters and return values when exceptions occur. When the original functions have no parameters, there will be an unused static function 'printFolder'. There's no need to be concerned about this.
+
+
+
+
+
+
